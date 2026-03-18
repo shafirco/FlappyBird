@@ -1,0 +1,30 @@
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+*.log
+
+# --- secrets ---
+.env
+.env.*
+
+# --- markdown (per request: don't upload .md) ---
+*.md
+
+# --- node ---
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- Expo / React Native ---
+mobile/.expo/
+mobile/dist/
+mobile/web-build/
+mobile/expo-env.d.ts
+mobile/.metro-health-check*
+mobile/android/
+mobile/ios/
+
+# --- backend data ---
+backend/data/
+
