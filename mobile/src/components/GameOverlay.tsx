@@ -5,7 +5,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import {
@@ -13,6 +12,7 @@ import {
   MEDAL_GOLD,
   MEDAL_PLATINUM,
   MEDAL_SILVER,
+  SCREEN_HEIGHT,
 } from "../game/constants";
 import type { HighScoreEntry } from "../services/highScores";
 import type { LeaderboardEntry } from "../services/leaderboardApi";
@@ -31,16 +31,28 @@ const MEDAL_COLORS: Record<string, string> = {
   PLATINUM: "#e5e4e2",
 };
 
+function formatDate(ts: number): string {
+  const d = new Date(ts);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}/${mm}`;
+}
+
 type Props = {
   score: number;
   gameOver: boolean;
   highScores: HighScoreEntry[];
   globalLeaderboard: LeaderboardEntry[];
   loadingLeaderboard: boolean;
+  apiBase: string;
+  leaderboardError: string | null;
   onRefreshLeaderboard: () => void;
-  onSubmitToLeaderboard: (name: string) => Promise<void>;
-  submitStatus: "idle" | "loading" | "done" | "error";
   submitError: string | null;
+  playerName: string | null;
+  sfxMuted: boolean;
+  bgMuted: boolean;
+  onToggleSfx: () => void;
+  onToggleBg: () => void;
   onRestart: () => void;
 };
 
@@ -50,16 +62,29 @@ export function GameOverlay({
   highScores,
   globalLeaderboard,
   loadingLeaderboard,
+  apiBase,
+  leaderboardError,
   onRefreshLeaderboard,
-  onSubmitToLeaderboard,
-  submitStatus,
   submitError,
+  playerName,
+  sfxMuted,
+  bgMuted,
+  onToggleSfx,
+  onToggleBg,
   onRestart,
 }: Props) {
   const scoreScale = useRef(new Animated.Value(1)).current;
   const shakeX = useRef(new Animated.Value(0)).current;
   const [prevScore, setPrevScore] = useState(score);
-  const [playerName, setPlayerName] = useState("");
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [showMyBestModal, setShowMyBestModal] = useState(false);
+
+  useEffect(() => {
+    if (!gameOver) {
+      setShowMyBestModal(false);
+      setShowLeaderboard(false);
+    }
+  }, [gameOver]);
 
   useEffect(() => {
     if (score > prevScore) {
@@ -95,10 +120,6 @@ export function GameOverlay({
 
   const medal = gameOver ? getMedal(score) : null;
 
-  const handleSubmit = () => {
-    onSubmitToLeaderboard(playerName.trim() || "Player");
-  };
-
   return (
     <>
       <Animated.View
@@ -111,6 +132,136 @@ export function GameOverlay({
       >
         <Text style={styles.score}>{score}</Text>
       </Animated.View>
+
+      {showLeaderboard && (
+        <View style={styles.modalBackdrop} pointerEvents="box-none">
+          <View style={styles.modalPanel}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Global Leaderboard</Text>
+              <Pressable
+                onPress={() => setShowLeaderboard(false)}
+                style={({ pressed }) => [
+                  styles.closeButton,
+                  pressed && styles.closeButtonPressed,
+                ]}
+              >
+                <Text style={styles.closeButtonText}>Close</Text>
+              </Pressable>
+            </View>
+
+            {/* no API / player debug info in production UI */}
+
+            {loadingLeaderboard ? (
+              <Text style={styles.modalLoading}>Loading...</Text>
+            ) : leaderboardError ? (
+              <Text style={styles.modalError}>{leaderboardError}</Text>
+            ) : globalLeaderboard.length === 0 ? (
+              <Text style={styles.modalLoading}>No scores yet</Text>
+            ) : (
+              <ScrollView
+                style={styles.table}
+                contentContainerStyle={styles.tableContent}
+                showsVerticalScrollIndicator={false}
+              >
+                <View style={styles.tableHeaderRow}>
+                  <Text style={styles.tableHeaderCell}>Rank</Text>
+                  <Text style={[styles.tableHeaderCell, styles.colName]}>Name</Text>
+                  <Text style={styles.tableHeaderCellRightScore}>Score</Text>
+                  <Text style={styles.tableHeaderCellRightDate}>Date</Text>
+                </View>
+
+                {globalLeaderboard.slice(0, 100).map((e, i) => (
+                  <View
+                    key={e.rank + e.date}
+                    style={[
+                      styles.row,
+                      i % 2 === 0 ? styles.rowEven : styles.rowOdd,
+                    ]}
+                  >
+                    <View style={styles.rankCircle}>
+                      <Text style={styles.rankCircleText}>{e.rank}</Text>
+                    </View>
+                    <Text style={[styles.name, styles.colName]} numberOfLines={1}>
+                      {e.name}
+                    </Text>
+                    <Text style={[styles.scoreCell, styles.colRight]}>{e.score}</Text>
+                    <Text style={[styles.dateCell, styles.colRight]}>
+                      {formatDate(e.date)}
+                    </Text>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+
+            <Pressable
+              onPress={onRefreshLeaderboard}
+              style={({ pressed }) => [
+                styles.refreshPill,
+                pressed && styles.refreshPillPressed,
+              ]}
+            >
+              <Text style={styles.refreshPillText}>Refresh</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
+      {showMyBestModal && (
+        <View style={styles.modalBackdrop} pointerEvents="box-none">
+          <View style={styles.modalPanel}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>My Best</Text>
+              <Pressable
+                onPress={() => setShowMyBestModal(false)}
+                style={({ pressed }) => [
+                  styles.closeButton,
+                  pressed && styles.closeButtonPressed,
+                ]}
+              >
+                <Text style={styles.closeButtonText}>Close</Text>
+              </Pressable>
+            </View>
+
+            <ScrollView
+              style={styles.table}
+              contentContainerStyle={styles.tableContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {highScores.length === 0 ? (
+                <Text style={styles.modalLoading}>No local scores yet</Text>
+              ) : (
+                <>
+                  <View style={styles.tableHeaderRow}>
+                    <Text style={styles.tableHeaderCell}>Rank</Text>
+                    <Text style={styles.tableHeaderCellRightScore}>Score</Text>
+                    <Text style={styles.tableHeaderCellRightDate}>Date</Text>
+                  </View>
+
+                  {highScores.slice(0, 100).map((e, i) => (
+                    <View
+                      key={e.date + i}
+                      style={[
+                        styles.row,
+                        i % 2 === 0 ? styles.rowEven : styles.rowOdd,
+                      ]}
+                    >
+                      <View style={styles.rankCircle}>
+                        <Text style={styles.rankCircleText}>{i + 1}</Text>
+                      </View>
+                      <Text style={[styles.scoreCell, styles.colRight]}>
+                        {e.score}
+                      </Text>
+                      <Text style={[styles.dateCell, styles.colRight]}>
+                        {formatDate(e.date)}
+                      </Text>
+                    </View>
+                  ))}
+                </>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      )}
 
       {gameOver && (
         <Animated.View
@@ -126,7 +277,34 @@ export function GameOverlay({
               contentContainerStyle={styles.panelScrollContent}
               showsVerticalScrollIndicator={false}
             >
-              <Text style={styles.gameOverText}>Game Over</Text>
+              <View style={styles.gameOverHeaderRow}>
+                <Text style={styles.gameOverText}>Game Over</Text>
+                <View style={styles.soundToggleGroup}>
+                  <Pressable
+                    onPress={onToggleSfx}
+                    style={({ pressed }) => [
+                      styles.soundToggleButton,
+                      pressed && styles.soundToggleButtonPressed,
+                    ]}
+                  >
+                    <Text style={styles.soundToggleButtonText}>
+                      SFX: {sfxMuted ? "OFF" : "ON"}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={onToggleBg}
+                    style={({ pressed }) => [
+                      styles.soundToggleButton,
+                      pressed && styles.soundToggleButtonPressed,
+                      { backgroundColor: "rgba(255,216,77,0.22)" },
+                    ]}
+                  >
+                    <Text style={styles.soundToggleButtonText}>
+                      Music: {bgMuted ? "OFF" : "ON"}
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
               {medal && (
                 <View
                   style={[
@@ -139,68 +317,30 @@ export function GameOverlay({
               )}
               <Text style={styles.finalScore}>Score: {score}</Text>
 
-              {highScores.length > 0 && (
-                <View style={styles.highScoresBox}>
-                  <Text style={styles.highScoresTitle}>My Best</Text>
-                  {highScores.slice(0, 5).map((e, i) => (
-                    <Text key={e.date + i} style={styles.highScoreRow}>
-                      #{i + 1} {e.score}
-                    </Text>
-                  ))}
-                </View>
-              )}
+              <Pressable
+                onPress={() => setShowMyBestModal(true)}
+                style={({ pressed }) => [
+                  styles.myBestToggleButton,
+                  pressed && styles.myBestToggleButtonPressed,
+                ]}
+              >
+                <Text style={styles.myBestToggleButtonText}>My Best</Text>
+              </Pressable>
 
-              <View style={styles.leaderboardSection}>
-                <Text style={styles.highScoresTitle}>Global Leaderboard</Text>
-                {loadingLeaderboard ? (
-                  <Text style={styles.leaderboardHint}>Loading...</Text>
-                ) : globalLeaderboard.length === 0 ? (
-                  <Text style={styles.leaderboardHint}>No scores yet</Text>
-                ) : (
-                  globalLeaderboard.slice(0, 10).map((e) => (
-                    <Text key={e.rank + e.date} style={styles.globalRow}>
-                      #{e.rank} {e.name} — {e.score}
-                    </Text>
-                  ))
-                )}
-                <Pressable
-                  onPress={onRefreshLeaderboard}
-                  style={styles.refreshButton}
-                >
-                  <Text style={styles.refreshButtonText}>Refresh</Text>
-                </Pressable>
-              </View>
+              <Pressable
+                onPress={() => setShowLeaderboard(true)}
+                style={({ pressed }) => [
+                  styles.leaderboardInsidePanelButton,
+                  pressed && styles.leaderboardInsidePanelButtonPressed,
+                ]}
+              >
+                <Text style={styles.leaderboardInsidePanelButtonText}>
+                  Leaderboard
+                </Text>
+              </Pressable>
 
-              {submitStatus !== "done" && (
-                <View style={styles.submitSection}>
-                  <TextInput
-                    style={styles.nameInput}
-                    placeholder="Your name"
-                    placeholderTextColor="#999"
-                    value={playerName}
-                    onChangeText={setPlayerName}
-                    maxLength={20}
-                    editable={submitStatus !== "loading"}
-                  />
-                  <Pressable
-                    onPress={handleSubmit}
-                    disabled={submitStatus === "loading"}
-                    style={[
-                      styles.submitButton,
-                      submitStatus === "loading" && styles.submitButtonDisabled,
-                    ]}
-                  >
-                    <Text style={styles.restartText}>
-                      {submitStatus === "loading" ? "..." : "Submit Score"}
-                    </Text>
-                  </Pressable>
-                  {submitStatus === "error" && submitError && (
-                    <Text style={styles.submitError}>{submitError}</Text>
-                  )}
-                </View>
-              )}
-              {submitStatus === "done" && (
-                <Text style={styles.submitDone}>Submitted!</Text>
+              {!!submitError && (
+                <Text style={styles.submitError}>{submitError}</Text>
               )}
             </ScrollView>
             <Pressable
@@ -252,9 +392,9 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: "center",
     minWidth: 260,
-    maxHeight: "80%",
+    maxHeight: SCREEN_HEIGHT * 0.62,
   },
-  panelScroll: { maxHeight: 340 },
+  panelScroll: { maxHeight: SCREEN_HEIGHT * 0.7 },
   panelScrollContent: { paddingBottom: 12 },
   leaderboardSection: {
     marginTop: 12,
@@ -265,33 +405,237 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   leaderboardHint: { fontSize: 12, color: "#888", marginTop: 4 },
+  leaderboardError: { fontSize: 11, color: "#c62828", marginTop: 6 },
   globalRow: { fontSize: 13, color: "#333", marginTop: 2 },
   refreshButton: { marginTop: 8, alignSelf: "flex-start" },
   refreshButtonText: { fontSize: 12, color: "#666" },
-  submitSection: { marginTop: 12, alignSelf: "stretch" },
-  nameInput: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
+  submitError: { fontSize: 11, color: "#c62828", marginTop: 4 },
+  leaderboardButton: {
+    position: "absolute",
+    top: 36,
+    right: 16,
+    backgroundColor: "rgba(0,0,0,0.28)",
     paddingHorizontal: 12,
     paddingVertical: 8,
-    fontSize: 14,
-    color: "#333",
-    marginBottom: 8,
+    borderRadius: 999,
+    zIndex: 31,
   },
-  submitButton: {
-    backgroundColor: "#4caf50",
-    paddingVertical: 10,
-    borderRadius: 8,
+  leaderboardButtonPressed: {
+    opacity: 0.85,
+  },
+  leaderboardButtonText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+  },
+  myBestToggleButton: {
+    marginTop: 14,
+    width: "100%",
+    backgroundColor: "rgba(0,0,0,0.06)",
+    borderRadius: 14,
+    paddingVertical: 12,
     alignItems: "center",
   },
-  submitButtonDisabled: { opacity: 0.6 },
-  submitError: { fontSize: 11, color: "#c62828", marginTop: 4 },
-  submitDone: { fontSize: 14, color: "#2e7d32", marginTop: 8 },
+  myBestToggleButtonPressed: { opacity: 0.85 },
+  myBestToggleButtonText: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: "#111",
+  },
+  myBestTableWrap: {
+    marginTop: 14,
+    width: "100%",
+    backgroundColor: "rgba(0,0,0,0.06)",
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  myBestHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  myBestHeaderTitle: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: "#111",
+  },
+  closeSmallButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "rgba(0,0,0,0.06)",
+  },
+  closeSmallButtonPressed: { opacity: 0.85 },
+  closeSmallButtonText: { fontSize: 12, fontWeight: "900", color: "#333" },
+  tabLeaderboardButton: {
+    marginTop: 10,
+    alignSelf: "flex-end",
+    backgroundColor: "#ffd84d",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+  },
+  tabLeaderboardButtonPressed: { opacity: 0.9 },
+  tabLeaderboardButtonText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#1a1a1a",
+  },
+  leaderboardInsidePanelButton: {
+    marginTop: 14,
+    width: "100%",
+    backgroundColor: "#ffd84d",
+    paddingVertical: 12,
+    borderRadius: 14,
+    alignItems: "center",
+  },
+  leaderboardInsidePanelButtonPressed: { opacity: 0.9 },
+  leaderboardInsidePanelButtonText: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: "#1a1a1a",
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 90,
+  },
+  modalPanel: {
+    width: "92%",
+    maxWidth: 520,
+    maxHeight: "80%",
+    backgroundColor: "rgba(255,255,255,0.98)",
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#111",
+  },
+  closeButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: "rgba(0,0,0,0.06)",
+  },
+  closeButtonPressed: { opacity: 0.85 },
+  closeButtonText: { fontSize: 12, fontWeight: "800", color: "#333" },
+  modalHint: { marginTop: 6, fontSize: 11, color: "#666" },
+  modalLoading: { marginTop: 12, fontSize: 12, color: "#666" },
+  modalError: { marginTop: 12, fontSize: 12, color: "#c62828" },
+  table: { marginTop: 10 },
+  tableContent: { paddingBottom: 12 },
+  tableHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    backgroundColor: "rgba(255,216,77,0.18)",
+    borderRadius: 12,
+    marginBottom: 6,
+  },
+  tableHeaderCell: {
+    width: 52,
+    textAlign: "center",
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#333",
+  },
+  tableHeaderCellRightScore: {
+    width: 60,
+    textAlign: "right",
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#333",
+  },
+  tableHeaderCellRightDate: {
+    width: 84,
+    textAlign: "right",
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#333",
+  },
+  colName: { flex: 1, paddingRight: 8 },
+  colRight: { textAlign: "right" },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(0,0,0,0.08)",
+  },
+  rowEven: { backgroundColor: "rgba(0,0,0,0.02)" },
+  rowOdd: { backgroundColor: "transparent" },
+  rankCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,216,77,0.25)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  rankCircleText: { fontWeight: "900", color: "#1a1a1a", fontSize: 12 },
+  name: { flex: 1, color: "#111", fontWeight: "700" },
+  scoreCell: { width: 60, textAlign: "right", fontWeight: "900", color: "#111" },
+  dateCell: {
+    width: 84,
+    textAlign: "right",
+    fontWeight: "800",
+    color: "#333",
+    fontSize: 12,
+  },
+  refreshPill: {
+    marginTop: 10,
+    alignSelf: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.06)",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  refreshPillPressed: { opacity: 0.85 },
+  refreshPillText: { fontSize: 12, fontWeight: "800", color: "#333" },
   gameOverText: {
     fontSize: 26,
     fontWeight: "bold",
     color: "#c62828",
+  },
+  gameOverHeaderRow: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 2,
+  },
+  soundToggleGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  soundToggleButton: {
+    backgroundColor: "rgba(0,0,0,0.06)",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    marginLeft: 8,
+  },
+  soundToggleButtonPressed: { opacity: 0.85 },
+  soundToggleButtonText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#1a1a1a",
   },
   medalBadge: {
     marginTop: 10,

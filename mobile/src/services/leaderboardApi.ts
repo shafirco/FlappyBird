@@ -4,9 +4,7 @@
  * - Android emulator: http://10.0.2.2:3000
  * - Physical device / production: your deployed URL (e.g. https://xxx.railway.app)
  */
-const API_BASE =
-  (typeof process !== "undefined" && process.env?.EXPO_PUBLIC_API_URL) ||
-  "http://localhost:3000";
+const API_BASE = process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
 
 export type LeaderboardEntry = {
   rank: number;
@@ -15,9 +13,18 @@ export type LeaderboardEntry = {
   date: number;
 };
 
+export function getApiBase(): string {
+  return API_BASE;
+}
+
 export async function fetchLeaderboard(): Promise<LeaderboardEntry[]> {
   const res = await fetch(`${API_BASE}/api/scores`);
-  if (!res.ok) throw new Error("Failed to load leaderboard");
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `Leaderboard GET failed (${res.status}) ${text || `${API_BASE}/api/scores`}`
+    );
+  }
   const data = await res.json();
   return data.scores || [];
 }
@@ -32,8 +39,10 @@ export async function submitToLeaderboard(
     body: JSON.stringify({ name: name.trim().slice(0, 20) || "Player", score }),
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || "Failed to submit score");
+    const errText = await res.text().catch(() => "");
+    throw new Error(
+      `Leaderboard POST failed (${res.status}) ${errText || `${API_BASE}/api/scores`}`
+    );
   }
   const data = await res.json();
   return data.scores || [];

@@ -9,6 +9,7 @@ import { DeathParticles } from "../src/components/DeathParticles";
 import { FlashOverlay } from "../src/components/FlashOverlay";
 import { CountdownOverlay } from "../src/components/CountdownOverlay";
 import { BackgroundPhase } from "../src/components/BackgroundPhase";
+import { NamePromptOverlay } from "../src/components/NamePromptOverlay";
 
 import {
   BIRD_SIZE,
@@ -22,10 +23,22 @@ import {
 import { createInitialPipes } from "../src/game/utils";
 import type { Pipe } from "../src/game/types";
 import { useGameLoop } from "../src/game/useGameLoop";
-import { initGameSound, playFlapSound, playPointSound, disposeGameSound } from "../src/services/sound";
+import {
+  initGameSound,
+  playFlapSound,
+  playPointSound,
+  disposeGameSound,
+  setSfxMuted,
+  setBgMuted,
+  startBackgroundMusic,
+  pauseBackgroundMusic,
+  getSfxMuted,
+  getBgMuted,
+} from "../src/services/sound";
 import { addHighScore, getHighScores, type HighScoreEntry } from "../src/services/highScores";
 import {
   fetchLeaderboard,
+  getApiBase,
   submitToLeaderboard,
   type LeaderboardEntry,
 } from "../src/services/leaderboardApi";
@@ -34,6 +47,7 @@ const BACKGROUND_IMAGE = require("../assets/images/background.png");
 
 export default function GameScreen() {
   const [gameStarted, setGameStarted] = useState(false);
+  const [playerName, setPlayerName] = useState<string | null>(null);
   const [birdY, setBirdY] = useState(INITIAL_BIRD_Y);
   const [pipes, setPipes] = useState<Pipe[]>(createInitialPipes());
   const [gameOver, setGameOver] = useState(false);
@@ -46,20 +60,27 @@ export default function GameScreen() {
   const [highScores, setHighScores] = useState<HighScoreEntry[]>([]);
   const [globalLeaderboard, setGlobalLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
-  const [submitStatus, setSubmitStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [sfxMuted, setSfxMutedState] = useState<boolean>(getSfxMuted());
+  const [bgMuted, setBgMutedState] = useState<boolean>(getBgMuted());
 
   const scoreRef = useRef(0);
   const prevScoreRef = useRef(0);
+  const submittedScoreRef = useRef<number | null>(null);
   const holdIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   scoreRef.current = score;
 
   function loadLeaderboard() {
     setLoadingLeaderboard(true);
+    setLeaderboardError(null);
     fetchLeaderboard()
       .then(setGlobalLeaderboard)
-      .catch(() => setGlobalLeaderboard([]))
+      .catch((e) => {
+        setGlobalLeaderboard([]);
+        setLeaderboardError(e instanceof Error ? e.message : "Failed to load");
+      })
       .finally(() => setLoadingLeaderboard(false));
   }
 
@@ -69,6 +90,14 @@ export default function GameScreen() {
     loadLeaderboard();
     return () => disposeGameSound();
   }, []);
+
+  useEffect(() => {
+    if (gameStarted && !gameOver && !bgMuted) {
+      startBackgroundMusic();
+    } else {
+      pauseBackgroundMusic();
+    }
+  }, [gameStarted, gameOver, bgMuted]);
 
   useEffect(() => {
     if (gameOver) loadLeaderboard();
@@ -86,6 +115,20 @@ export default function GameScreen() {
       addHighScore(score).then(setHighScores);
     }
   }, [gameOver, score]);
+
+  useEffect(() => {
+    if (!gameOver || score <= 0 || !playerName) return;
+    if (submittedScoreRef.current === score) return;
+    submittedScoreRef.current = score;
+    submitToLeaderboard(playerName, score)
+      .then((scores) => {
+        setGlobalLeaderboard(scores);
+        setSubmitError(null);
+      })
+      .catch((e) => {
+        setSubmitError(e instanceof Error ? e.message : "Failed to submit");
+      });
+  }, [gameOver, score, playerName]);
 
   useGameLoop({
     gameStarted,
@@ -136,7 +179,7 @@ export default function GameScreen() {
   }
 
   function handlePressIn() {
-    if (gameOver || !gameStarted) return;
+    if (gameOver || !gameStarted || !playerName) return;
     setIsPressing(true);
     setPressCharge(0);
     applyJump(JUMP_FORCE);
@@ -148,7 +191,7 @@ export default function GameScreen() {
   }
 
   function handlePressOut() {
-    if (gameOver || !gameStarted) return;
+    if (gameOver || !gameStarted || !playerName) return;
     setIsPressing(false);
     stopHoldCharge();
     if (pressCharge > 0) {
@@ -156,19 +199,6 @@ export default function GameScreen() {
       playFlapSound();
     }
     setPressCharge(0);
-  }
-
-  async function handleSubmitToLeaderboard(name: string) {
-    setSubmitStatus("loading");
-    setSubmitError(null);
-    try {
-      const scores = await submitToLeaderboard(name.trim() || "Player", score);
-      setGlobalLeaderboard(scores);
-      setSubmitStatus("done");
-    } catch (e) {
-      setSubmitStatus("error");
-      setSubmitError(e instanceof Error ? e.message : "Failed to submit");
-    }
   }
 
   function restartGame() {
@@ -182,10 +212,23 @@ export default function GameScreen() {
     setPressCharge(0);
     setIsPressing(false);
     setSquishTrigger(0);
-    setSubmitStatus("idle");
     setSubmitError(null);
+    setLeaderboardError(null);
+    submittedScoreRef.current = null;
     prevScoreRef.current = 0;
     getHighScores().then(setHighScores);
+  }
+
+  async function toggleSfx() {
+    const next = !sfxMuted;
+    setSfxMutedState(next);
+    await setSfxMuted(next);
+  }
+
+  async function toggleBg() {
+    const next = !bgMuted;
+    setBgMutedState(next);
+    await setBgMuted(next);
   }
 
   return (
@@ -216,14 +259,27 @@ export default function GameScreen() {
           highScores={highScores}
           globalLeaderboard={globalLeaderboard}
           loadingLeaderboard={loadingLeaderboard}
+          apiBase={getApiBase()}
+          leaderboardError={leaderboardError}
           onRefreshLeaderboard={loadLeaderboard}
-          onSubmitToLeaderboard={handleSubmitToLeaderboard}
-          submitStatus={submitStatus}
           submitError={submitError}
+          playerName={playerName}
+          sfxMuted={sfxMuted}
+          bgMuted={bgMuted}
+          onToggleSfx={toggleSfx}
+          onToggleBg={toggleBg}
           onRestart={restartGame}
         />
       </ImageBackground>
-      {!gameStarted && (
+      {!playerName && (
+        <NamePromptOverlay
+          onSubmit={(name) => {
+            setPlayerName(name);
+            setGameStarted(false);
+          }}
+        />
+      )}
+      {!gameStarted && playerName && (
         <CountdownOverlay onFinish={() => setGameStarted(true)} />
       )}
     </Pressable>

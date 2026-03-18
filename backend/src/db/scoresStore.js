@@ -55,7 +55,7 @@ async function getTopScoresPg() {
   const p = getPool();
   const res = await p.query(
     `SELECT name, score, EXTRACT(EPOCH FROM created_at)::bigint * 1000 AS date
-     FROM scores ORDER BY score DESC LIMIT $1`,
+     FROM scores ORDER BY score DESC, created_at ASC LIMIT $1`,
     [TOP_N]
   );
   return res.rows.map((row, i) => ({
@@ -70,9 +70,25 @@ async function addScorePg(name, score) {
   const nameStr = String(name || "Player").trim().slice(0, 20);
   const scoreNum = Math.max(0, Math.floor(Number(score) || 0));
   const p = getPool();
-  await p.query("INSERT INTO scores (name, score) VALUES ($1, $2)", [nameStr || "Player", scoreNum]);
+
+  // If we already have 100 rows and this score won't make it into the top-100, skip insert.
+  const stats = await p.query(
+    `SELECT COUNT(*)::int AS count, MIN(score)::int AS min_score FROM scores`
+  );
+  const count = stats.rows[0]?.count ?? 0;
+  const minScore = stats.rows[0]?.min_score ?? 0;
+  if (count >= MAX_ENTRIES && scoreNum <= minScore) {
+    return getTopScoresPg();
+  }
+
+  await p.query("INSERT INTO scores (name, score) VALUES ($1, $2)", [
+    nameStr || "Player",
+    scoreNum,
+  ]);
   await p.query(
-    `WITH top AS (SELECT id FROM scores ORDER BY score DESC LIMIT $1)
+    `WITH top AS (
+       SELECT id FROM scores ORDER BY score DESC, created_at ASC LIMIT $1
+     )
      DELETE FROM scores WHERE id NOT IN (SELECT id FROM top)`,
     [MAX_ENTRIES]
   );
