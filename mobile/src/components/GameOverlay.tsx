@@ -164,8 +164,14 @@ export function GameOverlay({
                 showsVerticalScrollIndicator={false}
               >
                 <View style={styles.tableHeaderRow}>
-                  <Text style={styles.tableHeaderCell}>Rank</Text>
-                  <Text style={[styles.tableHeaderCell, styles.colName]}>Name</Text>
+                  <View style={styles.rankCircleHeader}>
+                    <Text style={styles.rankCircleHeaderText} numberOfLines={1}>
+                      Rank
+                    </Text>
+                  </View>
+                  <Text style={styles.headerName} numberOfLines={1}>
+                    Name
+                  </Text>
                   <Text style={styles.tableHeaderCellRightScore}>Score</Text>
                   <Text style={styles.tableHeaderCellRightDate}>Date</Text>
                 </View>
@@ -181,7 +187,7 @@ export function GameOverlay({
                     <View style={styles.rankCircle}>
                       <Text style={styles.rankCircleText}>{e.rank}</Text>
                     </View>
-                    <Text style={[styles.name, styles.colName]} numberOfLines={1}>
+                      <Text style={[styles.name, styles.colName]} numberOfLines={1}>
                       {e.name}
                     </Text>
                     <Text style={[styles.scoreCell, styles.colRight]}>{e.score}</Text>
@@ -232,7 +238,14 @@ export function GameOverlay({
               ) : (
                 <>
                   <View style={styles.tableHeaderRow}>
-                    <Text style={styles.tableHeaderCell}>Rank</Text>
+                    <View style={styles.rankCircleHeader}>
+                      <Text
+                        style={styles.rankCircleHeaderText}
+                        numberOfLines={1}
+                      >
+                        Rank
+                      </Text>
+                    </View>
                     <Text style={styles.tableHeaderCellRightScore}>Score</Text>
                     <Text style={styles.tableHeaderCellRightDate}>Date</Text>
                   </View>
@@ -271,7 +284,7 @@ export function GameOverlay({
           ]}
           pointerEvents="box-none"
         >
-          <View style={styles.gameOverPanel}>
+                  <View style={styles.gameOverPanel}>
             <ScrollView
               style={styles.panelScroll}
               contentContainerStyle={styles.panelScrollContent}
@@ -392,9 +405,9 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: "center",
     minWidth: 260,
-    maxHeight: SCREEN_HEIGHT * 0.62,
+    maxHeight: SCREEN_HEIGHT * 0.48,
   },
-  panelScroll: { maxHeight: SCREEN_HEIGHT * 0.7 },
+  panelScroll: { maxHeight: SCREEN_HEIGHT * 0.55 },
   panelScrollContent: { paddingBottom: 12 },
   leaderboardSection: {
     marginTop: 12,
@@ -554,6 +567,42 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     color: "#333",
   },
+  tableHeaderCellRank: {
+    width: 28,
+    textAlign: "center",
+    fontSize: 11,
+    fontWeight: "900",
+    color: "#333",
+  },
+  rankCircleHeader: {
+    width: 31,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  rankCircleHeaderText: {
+    fontSize: 11,
+    fontWeight: "900",
+    color: "#333",
+  },
+  headerName: {
+    flex: 1,
+    paddingLeft: 8,
+    paddingRight: 8,
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#333",
+    textAlign: "left",
+  },
+  tableHeaderCellName: {
+    flex: 1,
+    paddingRight: 8,
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#333",
+    textAlign: "left",
+  },
   tableHeaderCellRightScore: {
     width: 60,
     textAlign: "right",
@@ -562,13 +611,14 @@ const styles = StyleSheet.create({
     color: "#333",
   },
   tableHeaderCellRightDate: {
-    width: 84,
+    width: 75,
     textAlign: "right",
     fontSize: 12,
     fontWeight: "900",
     color: "#333",
   },
-  colName: { flex: 1, paddingRight: 8 },
+  // Gives a small visual gap from the rank circle.
+  colName: { flex: 1, paddingLeft: 8, paddingRight: 8 },
   colRight: { textAlign: "right" },
   row: {
     flexDirection: "row",
