@@ -38,6 +38,8 @@ function formatDate(ts: number): string {
   return `${dd}/${mm}`;
 }
 
+const GLOBAL_LEADERBOARD_PAGE_SIZE = 11;
+
 type Props = {
   score: number;
   gameOver: boolean;
@@ -77,6 +79,7 @@ export function GameOverlay({
   const shakeX = useRef(new Animated.Value(0)).current;
   const [prevScore, setPrevScore] = useState(score);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [globalLeaderboardPage, setGlobalLeaderboardPage] = useState(0);
   const [showMyBestModal, setShowMyBestModal] = useState(false);
 
   useEffect(() => {
@@ -85,6 +88,11 @@ export function GameOverlay({
       setShowLeaderboard(false);
     }
   }, [gameOver]);
+
+  useEffect(() => {
+    // Reset pagination each time the modal opens.
+    if (showLeaderboard) setGlobalLeaderboardPage(0);
+  }, [showLeaderboard]);
 
   useEffect(() => {
     if (score > prevScore) {
@@ -119,6 +127,22 @@ export function GameOverlay({
   });
 
   const medal = gameOver ? getMedal(score) : null;
+
+  const globalTotalPages = Math.ceil(
+    globalLeaderboard.length / GLOBAL_LEADERBOARD_PAGE_SIZE
+  );
+  const globalPageSafe = Math.min(
+    globalLeaderboardPage,
+    Math.max(globalTotalPages - 1, 0)
+  );
+  const globalPageStart = globalPageSafe * GLOBAL_LEADERBOARD_PAGE_SIZE;
+  const globalPageItems = globalLeaderboard.slice(
+    globalPageStart,
+    globalPageStart + GLOBAL_LEADERBOARD_PAGE_SIZE
+  );
+  const canPrevGlobal = globalPageSafe > 0;
+  const canNextGlobal =
+    globalTotalPages > 1 && globalPageSafe < globalTotalPages - 1;
 
   return (
     <>
@@ -176,18 +200,23 @@ export function GameOverlay({
                   <Text style={styles.tableHeaderCellRightDate}>Date</Text>
                 </View>
 
-                {globalLeaderboard.slice(0, 100).map((e, i) => (
+                {globalPageItems.map((e, i) => (
                   <View
                     key={e.rank + e.date}
                     style={[
                       styles.row,
-                      i % 2 === 0 ? styles.rowEven : styles.rowOdd,
+                      (globalPageStart + i) % 2 === 0
+                        ? styles.rowEven
+                        : styles.rowOdd,
                     ]}
                   >
                     <View style={styles.rankCircle}>
                       <Text style={styles.rankCircleText}>{e.rank}</Text>
                     </View>
-                      <Text style={[styles.name, styles.colName]} numberOfLines={1}>
+                    <Text
+                      style={[styles.name, styles.colName]}
+                      numberOfLines={1}
+                    >
                       {e.name}
                     </Text>
                     <Text style={[styles.scoreCell, styles.colRight]}>{e.score}</Text>
@@ -199,8 +228,41 @@ export function GameOverlay({
               </ScrollView>
             )}
 
+            {globalTotalPages > 1 && globalLeaderboard.length > 0 && (
+              <View style={styles.globalPaginationRow}>
+                <Pressable
+                  disabled={!canPrevGlobal}
+                  onPress={() =>
+                    setGlobalLeaderboardPage((p) => Math.max(0, p - 1))
+                  }
+                  style={({ pressed }) => [
+                    styles.pageNavButton,
+                    !canPrevGlobal && styles.pageNavButtonDisabled,
+                    pressed && canPrevGlobal && styles.pageNavButtonPressed,
+                  ]}
+                >
+                  <Text style={styles.pageNavButtonText}>Prev</Text>
+                </Pressable>
+
+                <Pressable
+                  disabled={!canNextGlobal}
+                  onPress={() => setGlobalLeaderboardPage((p) => p + 1)}
+                  style={({ pressed }) => [
+                    styles.pageNavButton,
+                    !canNextGlobal && styles.pageNavButtonDisabled,
+                    pressed && canNextGlobal && styles.pageNavButtonPressed,
+                  ]}
+                >
+                  <Text style={styles.pageNavButtonText}>Next</Text>
+                </Pressable>
+              </View>
+            )}
+
             <Pressable
-              onPress={onRefreshLeaderboard}
+              onPress={() => {
+                setGlobalLeaderboardPage(0);
+                onRefreshLeaderboard();
+              }}
               style={({ pressed }) => [
                 styles.refreshPill,
                 pressed && styles.refreshPillPressed,
@@ -655,6 +717,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 999,
+  },
+  globalPaginationRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 10,
+    marginBottom: 6,
+    paddingHorizontal: 6,
+  },
+  pageNavButton: {
+    flex: 1,
+    backgroundColor: "#ffd84d",
+    borderRadius: 999,
+    paddingVertical: 10,
+    alignItems: "center",
+    marginHorizontal: 6,
+  },
+  pageNavButtonDisabled: { opacity: 0.45 },
+  pageNavButtonPressed: { opacity: 0.85 },
+  pageNavButtonText: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: "#1a1a1a",
+    letterSpacing: 0.2,
   },
   refreshPillPressed: { opacity: 0.85 },
   refreshPillText: { fontSize: 12, fontWeight: "800", color: "#333" },
